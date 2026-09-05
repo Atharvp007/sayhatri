@@ -69,15 +69,7 @@ export default function TripPage() {
     if (!user) navigate("/login");
   }, [user, navigate]);
 
-  /* ───────────────────────────────────────────────────
-     GEOAPIFY AUTOCOMPLETE
-     Replaces Nominatim — gives better results and uses
-     the same API key already in use for safety scoring.
-
-     What we extract from the response:
-       properties.formatted  → display label
-       properties.lat / lon  → coordinates sent to backend
-   ─────────────────────────────────────────────────── */
+  
   const fetchGeoapifySuggestions = async (query, type) => {
     if (!query || query.length < 3) {
       type === "start" ? setStartSuggestions([]) : setDestSuggestions([]);
@@ -112,7 +104,7 @@ export default function TripPage() {
     }
   };
 
-  // Debounce autocomplete to avoid hammering the API on every keystroke
+
   const handleStartInput = (value) => {
     setStartQuery(value);
     clearTimeout(startDebounceRef.current);

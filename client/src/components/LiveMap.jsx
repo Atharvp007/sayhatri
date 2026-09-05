@@ -11,7 +11,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// ── Fix Leaflet default icon paths broken by bundlers ──
+
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -40,7 +40,7 @@ const startIcon = makeIcon("#16a34a");   // green
 const destIcon  = makeIcon("#dc2626");   // red
 const userIcon  = makeIcon("#2563eb");   // blue
 
-// ── Auto-fit map to show all route geometry ──
+
 function FitBounds({ routes, bestRoute, startCoords, destCoords }) {
   const map = useMap();
 
@@ -56,7 +56,7 @@ function FitBounds({ routes, bestRoute, startCoords, destCoords }) {
       });
     }
 
-    // Fallback: just start + dest markers
+    
     if (points.length === 0) {
       if (startCoords) points.push(startCoords);
       if (destCoords) points.push(destCoords);
@@ -93,7 +93,7 @@ export default function LiveMap({
       style={{ height: "100%", width: "100%", minHeight: 450 }}
       zoomControl={true}
     >
-      {/* ── Modern CartoDB Positron tiles (no API key needed, clean look) ── */}
+      
       <TileLayer
         url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>'
@@ -144,7 +144,7 @@ export default function LiveMap({
         />
       )}
 
-      {/* ── Start marker ── */}
+      
       {startCoords && (
         <Marker position={startCoords} icon={startIcon}>
           <Popup>

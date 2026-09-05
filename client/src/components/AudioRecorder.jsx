@@ -84,7 +84,7 @@ export default function AudioRecorder({
       }
   };
 
-  // 🛑 STOP
+  //  STOP
   const stopRecording = () => {
 
     mediaRecorderRef.current.stop();

@@ -403,7 +403,7 @@ export default function Dashboard() {
           ))}
         </section>
 
-        {/* CONTROLS & HISTORIC STREAM BLOCK */}
+        
         <section className="grid lg:grid-cols-3 gap-8">
           
           <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 p-8 shadow-[0_2px_8px_-3px_rgba(0,0,0,0.05),0_10px_32px_-4px_rgba(0,0,0,0.03)] flex flex-col">
@@ -438,7 +438,7 @@ export default function Dashboard() {
               })}
             </div>
 
-            {/* THREAT INTELLIGENCE STREAM WITH PREMIUM STYLED REFRESH TRIGGER */}
+            
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mt-12 mb-6 pb-3 border-b border-slate-100 gap-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">Threat Intelligence Stream</h2>
@@ -489,7 +489,7 @@ export default function Dashboard() {
                         {new Date(alert.createdAt).toLocaleString()}
                       </p>
                     </div>
-                    {/* FIXED: Replaced corrupted formatting block with proper standard Google Maps dynamic coordinates layout template */}
+                    
                     <a 
                       href={alert.location?.lat ? `https://www.google.com/maps?q=${alert.location.lat},${alert.location.lng}` : "#"} 
                       target="_blank" 

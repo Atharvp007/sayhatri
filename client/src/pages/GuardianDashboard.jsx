@@ -16,7 +16,7 @@ import L from "leaflet";
 import icon from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
 
-// Fix default Leaflet marker icon
+
 let DefaultIcon = L.icon({
   iconUrl: icon,
   shadowUrl: iconShadow,
@@ -132,7 +132,7 @@ export default function GuardianDashboard() {
       }
     });
 
-    // ✅ Real-time location updates from user
+    //  Real-time location updates from user
     socket.on("location-update", (data) => {
       const loc = [data.location.lat, data.location.lng];
       setActiveTrips((prev) => {
@@ -150,7 +150,7 @@ export default function GuardianDashboard() {
       setSelectedUserCoords(loc);
     });
 
-    // ✅ Trip started
+    //  Trip started
     socket.on("trip-started", (data) => {
       setNotifications((prev) => [
         {
@@ -174,7 +174,7 @@ export default function GuardianDashboard() {
       setSelectedUserCoords([data.start.lat, data.start.lng]);
     });
 
-    // ✅ User confirmed safe
+    //  User confirmed safe
     socket.on("safety-status-update", (data) => {
       setNotifications((prev) => [
         {
@@ -187,7 +187,7 @@ export default function GuardianDashboard() {
       ]);
     });
 
-    // ✅ Trip ended
+    //  Trip ended
     socket.on("trip-ended", (data) => {
       setNotifications((prev) => [
         {

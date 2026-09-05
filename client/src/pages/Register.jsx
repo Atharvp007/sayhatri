@@ -71,10 +71,10 @@ export default function Register() {
       : "bg-green-500";
 
   return (
-    /* OUTER WRAPPER: Matches full-bleed light slate background layout */
+    
     <div className="w-full max-w-none min-h-screen flex items-center justify-center bg-slate-50 text-slate-800 px-4 m-0 p-0 overflow-x-hidden">
 
-      {/* CARD: Clean white card panel matching your login card shadow mechanics */}
+   
       <div className="w-full max-w-md bg-white border border-slate-200/80 shadow-xl rounded-3xl p-8">
 
         {/* HEADER */}
@@ -177,7 +177,7 @@ export default function Register() {
             />
           </div>
 
-          {/* BUTTON: Solid Black / Deep Slate Action styling */}
+         
           <button
             type="submit"
             disabled={loading}
@@ -187,7 +187,7 @@ export default function Register() {
           </button>
         </form>
 
-        {/* FOOTER: Custom red text for the directional Login toggle link */}
+        
         <div className="text-center mt-6 text-sm text-slate-500">
           Already have an account?{" "}
           <Link to="/login" className="text-red-600 hover:underline font-semibold transition-colors">

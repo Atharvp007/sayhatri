@@ -1,6 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import socket from "../socket/socket";
+
+const OFFLINE_SOS_KEY = "pendingSOSAlerts";
 
 export default function SOSButton() {
   /* =========================
@@ -16,13 +18,20 @@ export default function SOSButton() {
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
+
   // Ref tracking to circumvent asynchronous state closure lag
   const currentAlertIdRef = useRef(null);
+
+  // Tracks the unique ID of the current SOS
+  const currentSOSClientEventIdRef = useRef(null);
 
   /* =========================
       SMART HIGH-ACCURACY GPS ENGINE
   ========================= */
-  const getAccurateLocation = async (maxAttempts = 3, delayMs = 1500) => {
+  const getAccurateLocation = async (
+    maxAttempts = 3,
+    delayMs = 1500
+  ) => {
     const fetchSnapshot = () => {
       return new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(
@@ -30,7 +39,7 @@ export default function SOSButton() {
           reject,
           {
             enableHighAccuracy: true,
-            timeout: 8000, 
+            timeout: 8000,
             maximumAge: 0,
           }
         );
@@ -40,31 +49,203 @@ export default function SOSButton() {
     let bestPosition = null;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      console.log(`📡 GPS Acquisition attempt ${attempt} of ${maxAttempts}...`);
+      console.log(
+        `📡 GPS Acquisition attempt ${attempt} of ${maxAttempts}...`
+      );
+
       try {
         const position = await fetchSnapshot();
         const accuracy = position.coords.accuracy;
-        console.log(`🎯 Attempt ${attempt} accuracy: ${Math.round(accuracy)} meters.`);
+
+        console.log(
+          `🎯 Attempt ${attempt} accuracy: ${Math.round(
+            accuracy
+          )} meters.`
+        );
 
         if (accuracy && accuracy <= 30) {
           return position;
         }
 
-        if (!bestPosition || accuracy < bestPosition.coords.accuracy) {
+        if (
+          !bestPosition ||
+          accuracy < bestPosition.coords.accuracy
+        ) {
           bestPosition = position;
         }
       } catch (err) {
-        console.warn(`GPS Attempt ${attempt} failed:`, err.message);
+        console.warn(
+          `GPS Attempt ${attempt} failed:`,
+          err.message
+        );
       }
 
       if (attempt < maxAttempts) {
-        await new Promise((res) => setTimeout(res, delayMs));
+        await new Promise((res) =>
+          setTimeout(res, delayMs)
+        );
       }
     }
 
     if (bestPosition) return bestPosition;
-    throw new Error("Could not acquire location metrics from hardware layer.");
+
+    throw new Error(
+      "Could not acquire location metrics from hardware layer."
+    );
   };
+
+  /* =========================
+      GENERATE UNIQUE SOS ID
+  ========================= */
+  const generateEventId = () => {
+    return `${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(2, 10)}`;
+  };
+
+  /* =========================
+      SAVE SOS LOCALLY
+  ========================= */
+  const saveSOSOffline = (sosData) => {
+    try {
+      const existing = JSON.parse(
+        localStorage.getItem(OFFLINE_SOS_KEY) || "[]"
+      );
+
+      const alreadyExists = existing.some(
+        (item) =>
+          item.clientEventId === sosData.clientEventId
+      );
+
+      if (alreadyExists) {
+        console.log(
+          "⚠️ SOS already exists in offline queue."
+        );
+        return;
+      }
+
+      existing.push(sosData);
+
+      localStorage.setItem(
+        OFFLINE_SOS_KEY,
+        JSON.stringify(existing)
+      );
+
+      console.log("💾 SOS saved to offline queue.");
+    } catch (error) {
+      console.error(
+        "Failed to save SOS offline:",
+        error
+      );
+    }
+  };
+
+  /* =========================
+      SYNC OFFLINE SOS
+  ========================= */
+  const syncOfflineSOS = async () => {
+    try {
+      const pending = JSON.parse(
+        localStorage.getItem(OFFLINE_SOS_KEY) || "[]"
+      );
+
+      if (pending.length === 0) return;
+
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        console.log(
+          "❌ No authentication token available."
+        );
+        return;
+      }
+
+      console.log(
+        `🌐 Syncing ${pending.length} offline SOS alert(s)...`
+      );
+
+      const remaining = [];
+
+      for (const sos of pending) {
+        try {
+          const res = await axios.post(
+            "http://localhost:5000/api/sos/trigger",
+            {
+              location: sos.location,
+              tripId: sos.tripId || null,
+              audioUrl: null,
+              isOfflineSync: true,
+              clientEventId: sos.clientEventId,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+
+          console.log(
+            "✅ Offline SOS synchronized:",
+            res.data
+          );
+
+          // If this is the currently active SOS
+          if (
+            sos.clientEventId ===
+            currentSOSClientEventIdRef.current
+          ) {
+            currentAlertIdRef.current =
+              res.data.alert._id;
+          }
+        } catch (error) {
+          console.log(
+            "⏳ SOS sync failed. Keeping it in queue."
+          );
+
+          remaining.push(sos);
+        }
+      }
+
+      localStorage.setItem(
+        OFFLINE_SOS_KEY,
+        JSON.stringify(remaining)
+      );
+    } catch (error) {
+      console.error(
+        "Offline SOS synchronization failed:",
+        error
+      );
+    }
+  };
+
+  /* =========================
+      INTERNET RETURN HANDLER
+  ========================= */
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log(
+        "🌐 Internet restored. Syncing SOS..."
+      );
+
+      syncOfflineSOS();
+    };
+
+    window.addEventListener(
+      "online",
+      handleOnline
+    );
+
+    if (navigator.onLine) {
+      syncOfflineSOS();
+    }
+
+    return () => {
+      window.removeEventListener(
+        "online",
+        handleOnline
+      );
+    };
+  }, []);
 
   /* =========================
       START SOS
@@ -76,13 +257,16 @@ export default function SOSButton() {
       /* =========================
           MICROPHONE START
       ========================= */
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
 
       streamRef.current = stream;
 
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder =
+        new MediaRecorder(stream);
+
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -93,50 +277,89 @@ export default function SOSButton() {
       };
 
       mediaRecorder.start();
+
       console.log("🎤 Recording started");
 
       /* =========================
           GET GPS LOCATION
       ========================= */
       let position;
+
       try {
-        position = await getAccurateLocation(3, 1500);
+        position =
+          await getAccurateLocation(3, 1500);
       } catch (err) {
         console.log("GPS ERROR:", err);
-        alert("Unable to acquire reliable location. Ensure location features are turned on and step outside.");
-        
+
+        alert(
+          "Unable to acquire reliable location. Ensure location features are turned on and step outside."
+        );
+
         if (streamRef.current) {
-          streamRef.current.getTracks().forEach((t) => t.stop());
+          streamRef.current
+            .getTracks()
+            .forEach((t) => t.stop());
         }
+
         setLoading(false);
         return;
       }
 
-      const accuracy = position.coords.accuracy;
-      console.log("✅ Optimal GPS Position resolved:", position.coords);
+      const accuracy =
+        position.coords.accuracy;
 
-      const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-      const accuracyHardCap = isLocalhost ? 150000 : 1000;
-      const lowAccuracyWarningThreshold = isLocalhost ? 150000 : 60;
+      console.log(
+        "✅ Optimal GPS Position resolved:",
+        position.coords
+      );
 
-      if (!accuracy || accuracy > accuracyHardCap) {
-        alert("❌ Location telemetry too inaccurate. Please move to an open area and try again.");
+      const isLocalhost =
+        window.location.hostname ===
+          "localhost" ||
+        window.location.hostname ===
+          "127.0.0.1";
+
+      const accuracyHardCap =
+        isLocalhost ? 150000 : 1000;
+
+      const lowAccuracyWarningThreshold =
+        isLocalhost ? 150000 : 60;
+
+      if (
+        !accuracy ||
+        accuracy > accuracyHardCap
+      ) {
+        alert(
+          "❌ Location telemetry too inaccurate. Please move to an open area and try again."
+        );
+
         if (streamRef.current) {
-          streamRef.current.getTracks().forEach((t) => t.stop());
+          streamRef.current
+            .getTracks()
+            .forEach((t) => t.stop());
         }
+
         setLoading(false);
         return;
       }
 
-      if (accuracy > lowAccuracyWarningThreshold) {
+      if (
+        accuracy >
+        lowAccuracyWarningThreshold
+      ) {
         const proceed = window.confirm(
-          `⚠️ Low accuracy (${Math.round(accuracy)}m). Your device is likely using cell-towers instead of GPS satellites. Do you still want to dispatch?`
+          `⚠️ Low accuracy (${Math.round(
+            accuracy
+          )}m). Your device is likely using cell-towers instead of GPS satellites. Do you still want to dispatch?`
         );
 
         if (!proceed) {
           if (streamRef.current) {
-            streamRef.current.getTracks().forEach((t) => t.stop());
+            streamRef.current
+              .getTracks()
+              .forEach((t) => t.stop());
           }
+
           setLoading(false);
           return;
         }
@@ -148,65 +371,124 @@ export default function SOSButton() {
       };
 
       /* =========================
+          CREATE UNIQUE SOS ID
+      ========================= */
+      const clientEventId =
+        generateEventId();
+
+      currentSOSClientEventIdRef.current =
+        clientEventId;
+
+      const sosData = {
+        location: currentLocation,
+        tripId: null,
+        clientEventId,
+        createdAt:
+          new Date().toISOString(),
+      };
+
+      /* =========================
           TRIGGER SOS API
       ========================= */
-      const token = localStorage.getItem("token");
+      const token =
+        localStorage.getItem("token");
 
-      const res = await axios.post(
-        "http://localhost:5000/api/sos/trigger",
-        {
-          location: currentLocation,
-          tripId: null,
-          audioUrl: null,
-          isOfflineSync: false,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
+      let serverAlertCreated = false;
+
+      try {
+        const res = await axios.post(
+          "http://localhost:5000/api/sos/trigger",
+          {
+            ...sosData,
+            audioUrl: null,
+            isOfflineSync: false,
           },
-        }
-      );
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
 
-      // Force Custom Event pipeline to sync UI instantly
-      window.dispatchEvent(new CustomEvent("sos-created"));
+        window.dispatchEvent(
+          new CustomEvent("sos-created")
+        );
 
-      // Lock current alert ID into the reference container immediately
-      currentAlertIdRef.current = res.data.alert._id;
+        currentAlertIdRef.current =
+          res.data.alert._id;
+
+        serverAlertCreated = true;
+
+        console.log(
+          "🚨 SOS CREATED:",
+          res.data
+        );
+      } catch (error) {
+        console.log(
+          "🌐 Internet/backend unavailable."
+        );
+
+        saveSOSOffline(sosData);
+
+        alert(
+          "🚨 SOS saved offline. It will be synchronized when internet connection is restored."
+        );
+      }
+
       setSOSActive(true);
-      console.log("🚨 SOS CREATED:", res.data);
 
       /* =========================
           LIVE TRACKING
       ========================= */
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        (pos) => {
-          const location = {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          };
+      watchIdRef.current =
+        navigator.geolocation.watchPosition(
+          (pos) => {
+            const location = {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+            };
 
-          socket.emit("send-location", {
-            alertId: currentAlertIdRef.current,
-            location,
-            timestamp: new Date(),
-          });
+            // Don't send location until alert exists on server
+            if (!currentAlertIdRef.current) {
+              console.log(
+                "⏳ Waiting for SOS synchronization..."
+              );
+              return;
+            }
 
-          console.log("📍 Live Streamed Position:", location);
-        },
-        (err) => {
-          console.log("GPS WATCH ERROR:", err);
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 20000,
-        }
-      );
+            socket.emit("send-location", {
+              alertId:
+                currentAlertIdRef.current,
+              location,
+              timestamp: new Date(),
+            });
 
-      alert("🚨 SOS ACTIVATED");
+            console.log(
+              "📍 Live Streamed Position:",
+              location
+            );
+          },
+          (err) => {
+            console.log(
+              "GPS WATCH ERROR:",
+              err
+            );
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 20000,
+          }
+        );
+
+      if (serverAlertCreated) {
+        alert("🚨 SOS ACTIVATED");
+      }
     } catch (err) {
       console.error(err);
+
       alert("Failed to start SOS");
+
       setSOSActive(false);
     } finally {
       setLoading(false);
@@ -219,71 +501,105 @@ export default function SOSButton() {
   const stopSOS = async () => {
     try {
       setSOSActive(false);
-      const activeAlertId = currentAlertIdRef.current;
+
+      const activeAlertId =
+        currentAlertIdRef.current;
 
       /* STOP GPS */
       if (watchIdRef.current) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
+        navigator.geolocation.clearWatch(
+          watchIdRef.current
+        );
+
+        watchIdRef.current = null;
       }
 
       /* STOP RECORDING & UPLOAD */
       if (
         mediaRecorderRef.current &&
-        mediaRecorderRef.current.state !== "inactive"
+        mediaRecorderRef.current.state !==
+          "inactive"
       ) {
-        // Bind upload handler before calling .stop() to ensure execution sequence
-        mediaRecorderRef.current.onstop = async () => {
-          try {
-            const blob = new Blob(chunksRef.current, {
-              type: "audio/webm",
-            });
-
-            const formData = new FormData();
-            formData.append("audio", blob, "recording.webm");
-
-            const uploadRes = await axios.post(
-              "http://localhost:5000/api/recordings/upload",
-              formData,
-              {
-                headers: {
-                  "Content-Type": "multipart/form-data",
-                },
-              }
-            );
-
-            const audioUrl = uploadRes.data.audioUrl;
-
-            if (activeAlertId) {
-              await axios.put(
-                `http://localhost:5000/api/alerts/${activeAlertId}/audio`,
-                { audioUrl }
+        mediaRecorderRef.current.onstop =
+          async () => {
+            try {
+              const blob = new Blob(
+                chunksRef.current,
+                {
+                  type: "audio/webm",
+                }
               );
-              console.log("🎤 Audio successfully bound to active alert record.");
+
+              const formData =
+                new FormData();
+
+              formData.append(
+                "audio",
+                blob,
+                "recording.webm"
+              );
+
+              const uploadRes =
+                await axios.post(
+                  "http://localhost:5000/api/recordings/upload",
+                  formData,
+                  {
+                    headers: {
+                      "Content-Type":
+                        "multipart/form-data",
+                    },
+                  }
+                );
+
+              const audioUrl =
+                uploadRes.data.audioUrl;
+
+              if (activeAlertId) {
+                await axios.put(
+                  `http://localhost:5000/api/alerts/${activeAlertId}/audio`,
+                  { audioUrl }
+                );
+
+                console.log(
+                  "🎤 Audio successfully bound to active alert record."
+                );
+              }
+
+              chunksRef.current = [];
+            } catch (err) {
+              console.log(
+                "UPLOAD ERROR:",
+                err
+              );
             }
-            chunksRef.current = [];
-          } catch (err) {
-            console.log("UPLOAD ERROR:", err);
-          }
-        };
+          };
 
         mediaRecorderRef.current.stop();
       }
 
       /* STOP MIC STREAM */
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current
+          .getTracks()
+          .forEach((t) => t.stop());
       }
 
-      socket.emit("end-trip", {
-        alertId: activeAlertId,
-        endedAt: new Date(),
-      });
+      /* END TRIP */
+      if (activeAlertId) {
+        socket.emit("end-trip", {
+          alertId: activeAlertId,
+          endedAt: new Date(),
+        });
+      }
 
-      // Reset tracking state variable clear
       currentAlertIdRef.current = null;
+      currentSOSClientEventIdRef.current =
+        null;
+
       alert("✅ SOS STOPPED");
     } catch (err) {
       console.log(err);
+
       alert("Failed to stop SOS");
     }
   };
@@ -292,20 +608,18 @@ export default function SOSButton() {
       UI
   ========================= */
   return (
-    <div className="space-y-6">
+    <div>
       {!sosActive ? (
         <button
           onClick={startSOS}
           disabled={loading}
-          className="bg-red-600 hover:bg-red-700 text-white px-10 py-5 rounded-3xl text-2xl font-bold w-full transition-transform active:scale-[0.99] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shadow-md"
         >
-          {loading ? "Acquiring Precision GPS..." : "🚨 START SOS"}
+          {loading
+            ? "Acquiring Precision GPS..."
+            : "🚨 START SOS"}
         </button>
       ) : (
-        <button
-          onClick={stopSOS}
-          className="bg-green-600 hover:bg-green-700 text-white px-10 py-5 rounded-3xl text-2xl font-bold w-full transition-transform active:scale-[0.99] cursor-pointer shadow-md"
-        >
+        <button onClick={stopSOS}>
           ✅ STOP SOS
         </button>
       )}
